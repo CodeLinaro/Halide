@@ -367,9 +367,6 @@ set(HTML_TEMPLATE_FILES
     StmtToViz_stylesheet
     )
 
-set (SERIALIZATION_DEFINITION
-    halide_ir.fbs
-    )
 ##
 # Build and import the runtime.
 ##
@@ -404,17 +401,6 @@ foreach (f IN LISTS HTML_TEMPLATE_FILES)
 endforeach ()
 
 ##
-# Build the serialization header file.
-##
-add_library(Halide_serialization_headers OBJECT)
-add_custom_command(OUTPUT "$<SHELL_PATH:${CMAKE_CURRENT_SOURCE_DIR}/halide_ir_generated.h>"
-                   COMMAND flatc --cpp -o "$<SHELL_PATH:${CMAKE_CURRENT_SOURCE_DIR}>" "$<SHELL_PATH:${CMAKE_CURRENT_SOURCE_DIR}/halide_ir.fbs>"
-                   DEPENDS "$<SHELL_PATH:${CMAKE_CURRENT_SOURCE_DIR}/halide_ir.fbs>"
-                   VERBATIM)
-target_sources(Halide_serialization_headers PRIVATE "$<SHELL_PATH:${CMAKE_CURRENT_SOURCE_DIR}/halide_ir_generated.h>")
-message(STATUS "Build flatbuffers header")
-
-##
 # Build the Halide mono-header.
 ##
 
@@ -438,14 +424,28 @@ add_library(Halide
             # Including these as sources works around the need to "install" Halide_initmod
             $<TARGET_OBJECTS:Halide_initmod>
             $<TARGET_OBJECTS:Halide_c_templates>)
+
+##
+# Build the serialization header file.
+##
+
 if (BUILD_SERIALIZATION)
     find_package(flatbuffers REQUIRED)
-    if (flatbuffers_FOUND)
-        target_link_libraries(Halide PRIVATE flatbuffers)
-        message(STATUS "Build with flatbuffers")
-    else ()
-        message(FATAL_ERROR "flatbuffers not found")
-    endif ()
+
+    set(fb_dir "${Halide_BINARY_DIR}/flatc/include")
+
+    set(fb_def "${CMAKE_CURRENT_SOURCE_DIR}/halide_ir.fbs")
+    set(fb_header "${fb_dir}/halide_ir_generated.h")
+    add_custom_command(
+        OUTPUT "${fb_header}"
+        COMMAND flatbuffers::flatc --cpp -o "${fb_dir}" "${fb_def}"
+        DEPENDS "${fb_def}"
+        VERBATIM
+    )
+    
+    target_sources(Halide PRIVATE "${fb_header}")
+    target_include_directories(Halide PRIVATE "$<BUILD_INTERFACE:${fb_dir}>")
+    target_link_libraries(Halide PRIVATE flatbuffers::flatbuffers)
 endif ()
 
 add_library(Halide::Halide ALIAS Halide)
@@ -476,7 +476,6 @@ target_compile_definitions(Halide PUBLIC
                            HALIDE_VERSION_MAJOR=${Halide_VERSION_MAJOR}
                            HALIDE_VERSION_MINOR=${Halide_VERSION_MINOR}
                            HALIDE_VERSION_PATCH=${Halide_VERSION_PATCH})
-
 
 target_include_directories(Halide INTERFACE "$<BUILD_INTERFACE:${Halide_BINARY_DIR}/include>")
 add_dependencies(Halide HalideIncludes)
